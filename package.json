@@ -1,8 +1,9 @@
 {
   "name": "@omichalo/ffttapi-node",
   "version": "0.0.8",
-  "description": "\"# ffttAPI\"",
+  "description": "🏓 API Node.js/TypeScript pour la FFTT (Fédération Française de Tennis de Table) - Consommateur de l'API officielle Smartping 2.0",
   "main": "build/FFTTAPI.js",
+  "types": "build/FFTTAPI.d.ts",
   "scripts": {
     "start": "nodemon source/server.ts",
     "build": "rm -rf build/ && tsc",
@@ -16,22 +17,45 @@
     "lint": "eslint source/**/*.ts --ext .ts",
     "lint:fix": "eslint source/**/*.ts --ext .ts --fix",
     "format": "prettier --write source/**/*.ts",
-    "check": "npm run lint && npm run build && npm test"
+    "check": "npm run lint && npm run build && npm test",
+    "prepublishOnly": "npm run build"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/StephSako/ffttAPI.git"
+    "url": "git+https://github.com/omichalo/FFTT-API-typescript.git"
   },
-  "keywords": [],
-  "author": "StephSako",
-  "license": "ISC",
+  "keywords": [
+    "fftt",
+    "tennis-de-table",
+    "ping-pong",
+    "api",
+    "typescript",
+    "nodejs",
+    "smartping",
+    "federation-francaise",
+    "sport",
+    "classement",
+    "joueurs",
+    "clubs",
+    "rencontres"
+  ],
+  "author": "Olivier Michalowicz <omichalo>",
+  "license": "MIT",
   "bugs": {
-    "url": "https://github.com/StephSako/ffttAPI/issues"
+    "url": "https://github.com/omichalo/FFTT-API-typescript/issues"
   },
   "publishConfig": {
     "access": "public"
   },
-  "homepage": "https://github.com/StephSako/ffttAPI#readme",
+  "homepage": "https://github.com/omichalo/FFTT-API-typescript#readme",
+  "files": [
+    "build/",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=14.0.0"
+  },
   "dependencies": {
     "@types/axios": "^0.14.0",
     "@types/express": "^4.17.13",

@@ -1,52 +1,63 @@
-# EN CONSTRUCTION !! Publication sur npm en fin d'année
+# FFTT API - Node.js/TypeScript
 
-FFTTApi, API Node.JS/TypeScript pour la FFTT
-=============================
+[![npm version](https://badge.fury.io/js/@omichalo%2Fffttapi-node.svg)](https://badge.fury.io/js/@omichalo%2Fffttapi-node)
+[![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](https://opensource.org/licenses/ISC)
 
-[![build status](https://gitlab.com/al37350/ffttAPI/badges/master/build.svg)](https://gitlab.com/al37350/ffttAPI/commits/master)
-[![coverage report](https://gitlab.com/al37350/ffttAPI/badges/master/coverage.svg)](https://gitlab.com/al37350/ffttAPI/commits/master)
-FFTTApi permet de consommer facilement l'API officielle de la Fédération Française de Tennis de table.
+FFTT API permet de consommer facilement l'API officielle de la Fédération Française de Tennis de Table en utilisant Node.js et TypeScript.
 
-### Installation avec Composer
+## 🚀 Installation
 
-
-Il est recommandé d'installer FFTTApi grâce à composer
-[Composer](http://getcomposer.org).
+### Avec npm
 
 ```bash
-# Installer Composer
-curl -sS https://getcomposer.org/installer | php
+npm install @omichalo/ffttapi-node
 ```
 
-Puis, lancez la commande composer pour installer la dernière version stable de FFTTApi :
-
+### Avec yarn
 
 ```bash
-php composer.phar require al37350/fftt-api
+yarn add @omichalo/ffttapi-node
 ```
 
-Après l'installation, vous devez requérir l'autoloader de composer :
-```php
-require 'vendor/autoload.php';
-```
+## 📋 Configuration
 
-Ainsi vous pouvez facilement mettre à jour le packet.
+Créez un fichier `.env` à la racine de votre projet :
 
 ```bash
-composer.phar update
+cp env.example .env
 ```
-### Exemple d'utilisation
 
-```php
-<?php
+Puis configurez vos identifiants FFTT :
 
-use FFTTApi\FFTTApi;
+```env
+ID_SECRET=your_fftt_id_here
+PASSWORD_SECRET=your_fftt_password_here
+```
 
-require __DIR__ . '/vendor/autoload.php';
+## 💻 Exemple d'utilisation
 
-$api = new FFTTApi("identifiant", "password");
-$joueurs = $api->getJoueursByNom("Lamirault");
+```typescript
+import { FFTTAPI } from "@omichalo/ffttapi-node";
 
+// Initialisation de l'API
+const api = new FFTTAPI("identifiant", "password");
+
+// Récupération des joueurs par nom
+const joueurs = await api.getJoueursByNom("Lamirault");
+console.log(joueurs);
+```
+
+```javascript
+const { FFTTAPI } = require("@omichalo/ffttapi-node");
+
+// Initialisation de l'API
+const api = new FFTTAPI("identifiant", "password");
+
+// Récupération des joueurs par nom
+api
+  .getJoueursByNom("Lamirault")
+  .then((joueurs) => console.log(joueurs))
+  .catch((error) => console.error(error));
 ```
 
 ### Fonctionnalités
@@ -70,12 +81,24 @@ $joueurs = $api->getJoueursByNom("Lamirault");
 - Détail d'une rencontre
 - Liste des actualitées
 
-### Tests
+## 🧪 Tests
 
-Vous pouvez lancer les tests unitaires avec la commande suivante:
+Vous pouvez lancer les tests unitaires avec les commandes suivantes :
+
 ```bash
-$ cd path/to/FFTTApi/
-$ composer.phar install
-$ cp tests/.env.dist tests/.env #Set your parameters
-$ phpunit
+# Tests avec couverture
+npm test
+
+# Tests en mode watch
+npm run test:watch
+
+# Tests pour CI/CD
+npm run test:ci
 ```
+
+## 📦 Scripts disponibles
+
+- `npm run build` - Compilation TypeScript
+- `npm test` - Exécution des tests avec couverture
+- `npm run test:watch` - Tests en mode watch
+- `npm run test:ci` - Tests pour l'intégration continue

@@ -35,9 +35,9 @@ import { ClubNotFoundException } from "./Exception/ClubNotFoundException";
 import { JoueurNotFound } from "./Exception/JoueurNotFound";
 import { NoFFTTResponseException } from "./Exception/NoFFTTResponseException";
 import { InvalidLienRencontre } from "./Exception/InvalidLienRencontre";
-import { DynamicObj } from "./Model/DynamicObj.interface";
+import { PublicationDates } from "./Model/DynamicObj.interface";
 import { InvalidURIParametersException } from "./Exception/InvalidURIParametersException";
-import removeAccents from 'remove-accents';
+import removeAccents from "remove-accents";
 import { ClubRaw } from "./Model/Raw/ClubRaw.interface";
 import { DivisionRaw } from "./Model/Raw/DivisionRaw.interface";
 import { Division } from "./Model/Division";
@@ -48,827 +48,1025 @@ import { TourResultEquipeRaw } from "./Model/Raw/TourResultEquipeRaw.interface";
 import { RencontreDetailsRaw } from "./Model/Raw/RencontreDetailsRaw.interface";
 import { ActualiteRaw } from "./Model/Raw/ActualiteRaw.interface";
 import { JoueurClassementDetailsRaw } from "./Model/Raw/JoueurClassementDetailsRaw.interface";
+import {
+  Epreuve,
+  ResultatIndividuel,
+  ClassementIndividuel,
+  PartieIndividuelle,
+  ClassementCriterium,
+  InitialisationResponse,
+  ClubResponse,
+  JoueurResponse,
+  LicenceResponse,
+  OrganismeResponse,
+  DivisionResponse,
+  EquipeResponse,
+  ResultatEquipeResponse,
+  RencontreResponse,
+  PartieResponse,
+  ActualiteResponse,
+  HistoriqueResponse,
+} from "./Model/FFTTInterfaces";
+import { ResponseData } from "./Model/ResponseData.interface";
 
-export class FFTTAPI
-{
-    private id;
-    private password;
-    private apiRequest;
+export class FFTTAPI {
+  private id;
+  private password;
+  private apiRequest;
 
-    // Premier jour de Juillet comptabilisation de la saison
-    private PREMIER_JOUR_SAISON = 9;
+  // Premier jour de Juillet comptabilisation de la saison
+  private PREMIER_JOUR_SAISON = 9;
 
-    /**
-     * Dates de publication des matches (on part du principe qu'il n'y aura pas de matches officiels le 30 et 31 Décembre et que la publication aura lieu le 1er Janvier ...)
-     * mois => jour
-     **/
-    private DATES_PUBLICATION: DynamicObj = {
-        1: 1,
-        2: 3,
-        3: 4,
-        4: 6,
-        5: 4,
-        6: 10,
-        7: this.PREMIER_JOUR_SAISON,
-        10: 4,
-        11: 3
-    };
+  /**
+   * Dates de publication des matches (on part du principe qu'il n'y aura pas de matches officiels le 30 et 31 Décembre et que la publication aura lieu le 1er Janvier ...)
+   * mois => jour
+   **/
+  private DATES_PUBLICATION: PublicationDates = {
+    1: 1,
+    2: 3,
+    3: 4,
+    4: 6,
+    5: 4,
+    6: 10,
+    7: this.PREMIER_JOUR_SAISON,
+    10: 4,
+    11: 3,
+  };
 
-    public constructor(id: string, password: string)
-    {
-        this.id = id;
-        this.password = crypto.createHash('md5').update(password).digest("hex");
-        this.apiRequest = new ApiRequest(this.password, this.id);
+  public constructor(id: string, password: string) {
+    this.id = id;
+    this.password = crypto.createHash("md5").update(password).digest("hex");
+    this.apiRequest = new ApiRequest(this.password, this.id);
+  }
+
+  public initialize(): Promise<ResponseData> {
+    // Utilisation de la méthode ApiRequest pour la conformité avec les spécifications FFTT
+    return this.apiRequest
+      .get("xml_initialisation")
+      .then(r => r)
+      .catch(e => {
+        if (e.response?.status === 401) {
+          throw new InvalidCredidentials();
+        }
+        throw e;
+      });
+  }
+
+  /**
+   * @param string type (F = Fédération, Z = Zone, L=Ligue, D=Département)
+   * @return Organisme[]
+   * @throws Exception\InvalidURIParametersException
+   * @throws Exception\URIPartNotValidException
+   * @throws NoFFTTResponseException
+   */
+  public getOrganismes(type: string = "L"): Promise<Organisme[]> {
+    if (type && !["Z", "L", "D", "F"].includes(type)) {
+      type = "L";
     }
 
-    public initialize(): Promise<any>
-    {
-        let time = Date.now();
-        let timeCrypted = crypto.createHmac("sha1", this.password).update(time.toString()).digest('hex')
-        let uri = `https://apiv2.fftt.com/mobile/pxml/xml_initialisation.php?serie=${this.id}&tm=${time}&tmc=${timeCrypted}&id=${this.id}`;
+    return this.apiRequest
+      .get("xml_organisme", {
+        type: type,
+      })
+      .then((result: any) => {
+        let dataOrganismes: OrganismeRaw[] = Utils.wrappedArrayIfUnique(result.organisme);
+        let organismes: Organisme[] = [];
 
-        return this.apiRequest.send(uri).then(r => r)
-            .catch(e => {
-                if (e.response.status === 401){
-                    throw new InvalidCredidentials();
-                }
-                throw e;
-            })
+        dataOrganismes.forEach((organisme: OrganismeRaw) => {
+          // TODO Problème si un seul organismes listé / USe wrappedArrayIfUnique
+          organismes.push(
+            new Organisme(organisme.libelle, organisme.id, organisme.code, organisme.idPere)
+          );
+        });
+
+        return organismes;
+      });
+  }
+
+  // TODO Faire la liste des divisions
+
+  /**
+   * @param int departementId
+   * @return Club[]
+   * @throws Exception\InvalidURIParametersException
+   * @throws Exception\URIPartNotValidException
+   * @throws NoFFTTResponseException
+   */
+  public getClubsByDepartement(departementId: number): Promise<Club[]> {
+    return this.apiRequest
+      .get("xml_club_dep2", {
+        dep: departementId,
+      })
+      .then((result: any) => {
+        let clubData: ClubRaw[] = Utils.wrappedArrayIfUnique(result.club);
+        return ClubFactory.createClubFromArray(clubData);
+      });
+  }
+
+  /**
+   * @param string name
+   * @return Club[]
+   */
+  // TODO faire pour tous les paramètres possibles
+  public getClubsByName(name: string): Promise<Club[]> {
+    return this.apiRequest
+      .get("xml_club_b", {
+        ville: name,
+      })
+      .then((result: any) => {
+        let clubData: ClubRaw[] = Utils.wrappedArrayIfUnique(result.club);
+        return ClubFactory.createClubFromArray(clubData);
+      });
+  }
+
+  /**
+   * @param string clubId
+   * @return ClubDetails
+   * @throws ClubNotFoundException
+   * @throws Exception\InvalidURIParametersException
+   * @throws Exception\URIPartNotValidException
+   * @throws NoFFTTResponseException
+   */
+  public getClubDetails(clubId: string): Promise<ClubDetails> {
+    return this.apiRequest
+      .get("xml_club_detail", {
+        club: clubId,
+        // Ajout de paramètres potentiellement requis
+        saison: new Date().getFullYear().toString(),
+        type: "E", // Type d'épreuve (E = Equipes)
+        organisme: "75", // ID de l'organisme (Paris)
+        // Ajout de paramètres supplémentaires potentiellement requis
+        epreuve: "279", // ID de l'épreuve (Interclubs Jeunes)
+        phase: "1", // Phase de la compétition
+        groupe: "1", // ID du groupe
+      })
+      .then((result: any) => {
+        if (!result) throw new ClubNotFoundException(clubId);
+
+        let clubData: ClubDetailsRaw = result.club;
+
+        return new ClubDetails(
+          Number(clubData.idclub),
+          clubData.numero,
+          clubData.nom,
+          Utils.returnStringOrNull(clubData.nomsalle),
+          Utils.returnStringOrNull(clubData.adressesalle1),
+          Utils.returnStringOrNull(clubData.adressesalle2),
+          Utils.returnStringOrNull(clubData.adressesalle3),
+          Utils.returnStringOrNull(clubData.codepsalle),
+          Utils.returnStringOrNull(clubData.villesalle),
+          Utils.returnStringOrNull(clubData.web),
+          Utils.returnStringOrNull(clubData.nomcor),
+          Utils.returnStringOrNull(clubData.prenomcor),
+          Utils.returnStringOrNull(clubData.mailcor),
+          Utils.returnStringOrNull(clubData.telcor),
+          Utils.returnNumberOrNull(clubData.latitude),
+          Utils.returnNumberOrNull(clubData.longitude)
+        );
+      });
+  }
+
+  /**
+   * @param string clubId
+   * @return Joueur[]
+   * @throws ClubNotFoundException
+   * @throws Exception\InvalidURIParametersException
+   * @throws Exception\URIPartNotValidException
+   */
+  // TODO Ajouter les autres paramètres
+  public getJoueursByClub(clubId: string): Promise<Joueur[]> {
+    return this.apiRequest
+      .get("xml_liste_joueur_o", {
+        club: clubId,
+      })
+      .then((result: any) => {
+        let joueursResult: JoueurRaw[] = Utils.wrappedArrayIfUnique(result.joueur);
+        let joueurs: Joueur[] = [];
+
+        joueursResult.forEach((joueur: JoueurRaw) => {
+          let joueurTmp: Joueur = new Joueur(
+            joueur.licence,
+            joueur.club,
+            joueur.nclub,
+            joueur.nom,
+            joueur.prenom,
+            Number(joueur.points),
+            joueur.sexe === "M",
+            null,
+            Utils.returnNumberOrNull(joueur.place),
+            Utils.returnStringOrNull(joueur.echelon)
+          );
+          delete joueurTmp.classementOfficiel; // Le classement officiel du joueur n'est pas fourni pour cette route
+          joueurs.push(joueurTmp);
+        });
+        return joueurs;
+      });
+  }
+
+  /**
+   * @param string nom
+   * @param string prenom
+   * @return Joueur[]
+   * @throws Exception\InvalidURIParametersException
+   * @throws Exception\URIPartNotValidException
+   * @throws NoFFTTResponseException
+   */
+  public getJoueursByNom(nom: string, prenom: string = ""): Promise<Joueur[]> {
+    return this.apiRequest
+      .get("xml_liste_joueur", {
+        nom: removeAccents(nom)
+          .replace(/[\\"']/g, "\\$&")
+          .replace(/\u0000/g, "\\0"),
+        prenom: removeAccents(prenom)
+          .replace(/[\\"']/g, "\\$&")
+          .replace(/\u0000/g, "\\0"),
+      })
+      .then((result: any) => {
+        let arrayJoueurs: JoueurRaw[] = Utils.wrappedArrayIfUnique(result.joueur);
+        let joueurs: Joueur[] = [];
+
+        // TODO Revoir cette partie
+        if (arrayJoueurs) {
+          arrayJoueurs.forEach((joueur: JoueurRaw) => {
+            let joueurTmp = new Joueur(
+              joueur.licence,
+              joueur.club,
+              joueur.nclub,
+              joueur.nom,
+              joueur.prenom,
+              null,
+              null,
+              joueur.clast,
+              null,
+              null
+            );
+            delete joueurTmp.points; // Les champs sexe, echelon, place, points ne sont pas fournis pour cette route
+            delete joueurTmp.echelon;
+            delete joueurTmp.isHomme;
+            delete joueurTmp.points;
+            delete joueurTmp.place;
+            joueurs.push(joueurTmp);
+          });
+        }
+        return joueurs;
+      });
+  }
+
+  /**
+   * @param string licenceId
+   * @return JoueurDetails
+   * @throws Exception\InvalidURIParametersException
+   * @throws Exception\URIPartNotValidException
+   * @throws JoueurNotFound
+   */
+  public getJoueurDetailsByLicence(licenceId: string): Promise<JoueurClassementDetails> {
+    return this.apiRequest
+      .get("xml_licence_b", {
+        licence: licenceId,
+      })
+      .then((result: any) => {
+        let joueurResult: JoueurClassementDetailsRaw = result.licence;
+
+        // if (!joueurResult.hasOwnProperty('licence')) throw new JoueurNotFound(licenceId);
+        // else joueurResult = joueurResult.licence;
+
+        let joueurDetails: JoueurClassementDetails = new JoueurClassementDetails(
+          Number(joueurResult.idlicence),
+          licenceId,
+          joueurResult.nom,
+          joueurResult.prenom,
+          joueurResult.numclub,
+          joueurResult.nomclub,
+          joueurResult.sexe === "M" ? true : false,
+          joueurResult.cat,
+          Utils.returnNumberOrNull(joueurResult.initm) ?? Number(joueurResult.point),
+          Number(joueurResult.point),
+          Utils.returnNumberOrNull(joueurResult.pointm) ?? Number(joueurResult.point),
+          Utils.returnNumberOrNull(joueurResult.apointm) ?? Number(joueurResult.point),
+          Utils.returnStringOrNull(joueurResult.ja),
+          Utils.returnStringOrNull(joueurResult.arb),
+          Utils.returnStringOrNull(joueurResult.tech),
+          Utils.returnStringOrNull(joueurResult.mutation),
+          joueurResult.natio,
+          Utils.returnStringOrNull(joueurResult.echelon),
+          Utils.returnNumberOrNull(joueurResult.place),
+          Utils.returnStringOrNull(joueurResult.type),
+          joueurResult.certif
+        );
+        return joueurDetails;
+      })
+      .catch((_e) /*: NoFFTTResponseException*/ => {
+        console.log(_e);
+        throw new JoueurNotFound(licenceId);
+      });
+  }
+
+  /**
+   * @param string licenceId
+   * @return Classement
+   * @throws Exception\InvalidURIParametersException
+   * @throws Exception\URIPartNotValidException
+   * @throws JoueurNotFound
+   */
+  public getClassementJoueurByLicence(licence: string): Promise<Classement> {
+    return this.apiRequest
+      .get("xml_joueur", {
+        licence: licence,
+      })
+      .then((result: any) => {
+        let joueurDetails: ClassementRaw = result.joueur;
+
+        return new Classement(
+          Number(joueurDetails.point),
+          Number(joueurDetails.apoint),
+          joueurDetails.clast,
+          Number(joueurDetails.clnat),
+          Number(joueurDetails.rangreg),
+          Number(joueurDetails.rangdep),
+          Number(joueurDetails.valcla),
+          Number(joueurDetails.valinit),
+          joueurDetails.licence,
+          joueurDetails.nom,
+          joueurDetails.prenom,
+          joueurDetails.club,
+          joueurDetails.nclub,
+          joueurDetails.natio ?? null,
+          Number(joueurDetails.clglob),
+          Number(joueurDetails.aclglob),
+          joueurDetails.categ,
+          joueurDetails.clpro
+        );
+      })
+      .catch(_e => {
+        throw _e;
+        //throw new JoueurNotFound(licence);
+      });
+  }
+
+  public getDivisionsByEpreuve(
+    type: string,
+    idEpreuve: number,
+    idOrganisme: number
+  ): Promise<Division[]> {
+    return this.apiRequest
+      .get("xml_division", {
+        type: type,
+        epreuve: idEpreuve, // 'E' = Equipe, 'I' = Individuelle
+        organisme: idOrganisme,
+      })
+      .then((result: any) => {
+        let divisionsData: DivisionRaw[] = Utils.wrappedArrayIfUnique(result.division);
+        let divisions: Division[] = [];
+
+        divisionsData.forEach((division: DivisionRaw) => {
+          divisions.push(new Division(Number(division.iddivision), division.libelle));
+        });
+        return divisions;
+      });
+  }
+
+  /**
+   * @param string licenceId
+   * @return Historique[]
+   * @throws Exception\InvalidURIParametersException
+   * @throws Exception\URIPartNotValidException
+   * @throws JoueurNotFound
+   */
+  public getHistoriqueJoueurByLicence(licenceId: string): Promise<Historique[]> {
+    return this.apiRequest
+      .get("xml_histo_classement", {
+        numlic: licenceId,
+      })
+      .then((result: any) => {
+        let classementsData: HistoriqueRaw[] = Utils.wrappedArrayIfUnique(result.histo);
+        let classements: Historique[] = [];
+
+        classementsData.forEach((classement: HistoriqueRaw) => {
+          let splited = classement.saison.split(" ");
+          let historique = new Historique(
+            Number(splited[1]),
+            Number(splited[3]),
+            Number(classement.phase),
+            Number(classement.point),
+            Utils.returnStringOrNull(classement.echelon),
+            Utils.returnNumberOrNull(classement.place)
+          );
+          classements.push(historique);
+        });
+        return classements;
+      });
+    // .catch (_e/*: NoFFTTResponseException*/ => {
+    //     throw new JoueurNotFound(licenceId);
+    // })
+  }
+
+  /**
+   * @param string joueurId
+   * @return Partie[]
+   * @throws Exception\InvalidURIParametersException
+   * @throws Exception\URIPartNotValidException
+   */
+  public getPartiesJoueurByLicence(joueurId: string): Promise<Partie[]> {
+    return this.apiRequest
+      .get("xml_partie_mysql", {
+        licence: joueurId,
+      })
+      .then((result: any) => {
+        let partiesData: PartieRaw[] = Utils.wrappedArrayIfUnique(result.partie);
+        let parties: Partie[] = [];
+
+        partiesData.forEach((partie: PartieRaw) => {
+          let nom: string, prenom: string;
+          [nom, prenom] = Utils.returnNomPrenom(partie.advnompre);
+          parties.push(
+            new Partie(
+              partie.vd === "V" ? true : false,
+              partie.numjourn ? Number(partie.numjourn) : null,
+              Utils.createDate(partie.date),
+              Number(partie.pointres),
+              Number(partie.coefchamp),
+              partie.advlic,
+              partie.advsexe === "M" ? true : false,
+              nom,
+              prenom,
+              Number(partie.advclaof),
+              partie.licence,
+              Number(partie.idpartie),
+              partie.codechamp
+            )
+          );
+        });
+
+        return parties;
+      })
+      .catch((e) /*: NoFFTTResponseException)*/ => {
+        return [];
+      });
+  }
+
+  /**
+   * Détermine si la date d'un match est hors de la plage des dates définissant les matches comme validés/comptabilisés
+   */
+  public isNouveauMoisVirtuel(date: Date): boolean {
+    try {
+      let mois: number = date.getMonth() + 1;
+      let annee: number = date.getFullYear();
+
+      while (!this.DATES_PUBLICATION.hasOwnProperty(mois)) {
+        if (mois == 12) {
+          mois = 1;
+          annee++;
+        } else mois++;
+      }
+      return (
+        date.getTime() >= new Date(`${annee}/${mois}/${this.DATES_PUBLICATION[mois]}`).getTime()
+      );
+    } catch (e) {
+      return false;
     }
+  }
 
-    /**
-     * @param string type (F = Fédération, Z = Zone, L=Ligue, D=Département)
-     * @return Organisme[]
-     * @throws Exception\InvalidURIParametersException
-     * @throws Exception\URIPartNotValidException
-     * @throws NoFFTTResponseException
-     */
-    public getOrganismes(type: string = 'L'): Promise<Organisme[]>
-    {
-        if (type && !['Z', 'L', 'D', 'F'].includes(type)) {
-            type = 'L';
+  /**
+   * @param string joueurId
+   * @return UnvalidatedPartie[]
+   * @throws InvalidURIParametersException
+   * @throws URIPartNotValidException
+   */
+  public async getUnvalidatedPartiesJoueurByLicence(
+    joueurId: string
+  ): Promise<UnvalidatedPartie[]> {
+    return this.apiRequest
+      .get("xml_partie", {
+        numlic: joueurId,
+      })
+      .then(async (result: any) => {
+        let validatedParties: Partie[] = await this.getPartiesJoueurByLicence(joueurId);
+        let allParties: any;
+        try {
+          allParties = result.partie ? result.partie : [];
+        } catch (e /*: NoFFTTResponseException*/) {
+          allParties = [];
         }
 
-        return this.apiRequest.get('xml_organisme',
-        {
-            type: type,
-        }).then((result: any) => {
-            let dataOrganismes: OrganismeRaw[] = Utils.wrappedArrayIfUnique(result.organisme);
-            let organismes: Organisme[] = [];
+        let unvalidatedParties: UnvalidatedPartie[] = [];
+        try {
+          allParties.forEach((partie: UnvalidatedPartieRaw) => {
+            if (partie.forfait === "0") {
+              let nom: string, prenom: string;
+              [nom, prenom] = Utils.returnNomPrenom(partie.nom);
 
-            dataOrganismes.forEach((organisme: OrganismeRaw) => { // TODO Problème si un seul organismes listé / USe wrappedArrayIfUnique
-                organismes.push(new Organisme(
-                    organisme.libelle,
-                    organisme.id,
-                    organisme.code,
-                    organisme.idPere
-                ));
-            })
-    
-            return organismes;
-        })
-    }
+              let found = validatedParties.filter((validatedPartie: Partie) => {
+                let datePartie = Utils.createDate(partie.date);
 
-    // TODO Faire la liste des divisions
-
-    /**
-     * @param int departementId
-     * @return Club[]
-     * @throws Exception\InvalidURIParametersException
-     * @throws Exception\URIPartNotValidException
-     * @throws NoFFTTResponseException
-     */
-    public getClubsByDepartement(departementId: number): Promise<Club[]>
-    {
-        return this.apiRequest.get('xml_club_dep2',
-        {
-            dep: departementId,
-        }).then((result: any) => {
-            let clubData: ClubRaw[] = Utils.wrappedArrayIfUnique(result.club);
-            return ClubFactory.createClubFromArray(clubData);
-        })
-    }
-
-    /**
-     * @param string name
-     * @return Club[]
-     */
-    // TODO faire pour tous les paramètres possibles
-    public getClubsByName(name: string): Promise<Club[]>
-    {
-        return this.apiRequest.get('xml_club_b',
-        {
-            ville: name,
-        }).then((result: any) => {
-            let clubData: ClubRaw[] = Utils.wrappedArrayIfUnique(result.club);
-            return ClubFactory.createClubFromArray(clubData);
-        })
-    }
-
-    /**
-     * @param string clubId
-     * @return ClubDetails
-     * @throws ClubNotFoundException
-     * @throws Exception\InvalidURIParametersException
-     * @throws Exception\URIPartNotValidException
-     * @throws NoFFTTResponseException
-     */
-    public getClubDetails(clubId: string): Promise<ClubDetails>
-    {
-        return this.apiRequest.get('xml_club_detail',
-        {
-            club: clubId,
-        }).then((result: any) => {
-            if (!result) throw new ClubNotFoundException(clubId);
-            
-            let clubData: ClubDetailsRaw = result.club;
-    
-            return new ClubDetails(
-                Number(clubData.idclub),
-                clubData.numero,
-                clubData.nom,
-                Utils.returnStringOrNull(clubData.nomsalle),
-                Utils.returnStringOrNull(clubData.adressesalle1),
-                Utils.returnStringOrNull(clubData.adressesalle2),
-                Utils.returnStringOrNull(clubData.adressesalle3),
-                Utils.returnStringOrNull(clubData.codepsalle),
-                Utils.returnStringOrNull(clubData.villesalle),
-                Utils.returnStringOrNull(clubData.web),
-                Utils.returnStringOrNull(clubData.nomcor),
-                Utils.returnStringOrNull(clubData.prenomcor),
-                Utils.returnStringOrNull(clubData.mailcor),
-                Utils.returnStringOrNull(clubData.telcor),
-                Utils.returnNumberOrNull(clubData.latitude),
-                Utils.returnNumberOrNull(clubData.longitude)
-            );
-        })
-    }
-
-    /**
-     * @param string clubId
-     * @return Joueur[]
-     * @throws ClubNotFoundException
-     * @throws Exception\InvalidURIParametersException
-     * @throws Exception\URIPartNotValidException
-     */
-    // TODO Ajouter les autres paramètres
-    public getJoueursByClub(clubId: string): Promise<Joueur[]>
-    {
-        return this.apiRequest.get('xml_liste_joueur_o',
-        {
-            club: clubId
-        }).then((result : any) => {
-            let joueursResult: JoueurRaw[] = Utils.wrappedArrayIfUnique(result.joueur);
-            let joueurs: Joueur[] = [];
-    
-            joueursResult.forEach((joueur: JoueurRaw) => {
-                let joueurTmp: Joueur = new Joueur(
-                    joueur.licence,
-                    joueur.club,
-                    joueur.nclub,
-                    joueur.nom,
-                    joueur.prenom,
-                    Number(joueur.points),
-                    joueur.sexe === 'M',
-                    null,
-                    Utils.returnNumberOrNull(joueur.place),
-                    Utils.returnStringOrNull(joueur.echelon)
+                return (
+                  partie.date === Utils.createStringDateToFormat(validatedPartie.date) &&
+                  /** Si le nom du joueur correspond bien */
+                  Utils.removeAccentLowerCaseRegex(nom) ===
+                    Utils.removeAccentLowerCaseRegex(validatedPartie.adversaireNom) &&
+                  /** Si le prénom du joueur correspond bien */
+                  (Utils.removeAccentLowerCaseRegex(validatedPartie.adversairePrenom).match(
+                    new RegExp(Utils.removeAccentLowerCaseRegex(prenom) + ".*")
+                  ) ||
+                    Utils.removeAccentLowerCaseRegex(prenom).includes(
+                      Utils.removeAccentLowerCaseRegex(validatedPartie.adversairePrenom)
+                    )) &&
+                  /** Si le coefficient est renseigné */
+                  validatedPartie.coefficient === Number(partie.coefchamp) &&
+                  /** Si le joueur n'est pas absent */
+                  !prenom.includes("Absent") &&
+                  !nom.includes("Absent") &&
+                  /** Si la partie a été réalisée durant le mois dernier ou durant le mois actuel */
+                  !(
+                    validatedPartie.pointsObtenus === 0.0 &&
+                    ((datePartie.getMonth() + 1 === new Date().getMonth() + 1 &&
+                      datePartie.getFullYear() === new Date().getFullYear()) ||
+                      `${datePartie.getMonth() + 1}/${datePartie.getFullYear()}` ===
+                        `${Utils.getPreviousMonthsMonth()}/${Utils.getPreviousMonthsYear()}`)
+                  )
                 );
-                delete joueurTmp.classementOfficiel; // Le classement officiel du joueur n'est pas fourni pour cette route
-                joueurs.push(joueurTmp);
-            })
-            return joueurs;
-        })
-    }
+              }).length;
 
-
-    /**
-     * @param string nom
-     * @param string prenom
-     * @return Joueur[]
-     * @throws Exception\InvalidURIParametersException
-     * @throws Exception\URIPartNotValidException
-     * @throws NoFFTTResponseException
-     */
-    public getJoueursByNom(nom: string, prenom: string = ""): Promise<Joueur[]>
-    {
-        return this.apiRequest.get('xml_liste_joueur',
-        {
-            nom: removeAccents(nom).replace(/[\\"']/g, '\\$&').replace(/\u0000/g, '\\0'),
-            prenom: removeAccents(prenom).replace(/[\\"']/g, '\\$&').replace(/\u0000/g, '\\0'),
-        }).then((result: any) => {
-            let arrayJoueurs: JoueurRaw[] = Utils.wrappedArrayIfUnique(result.joueur);
-            let joueurs: Joueur[] = [];
-    
-            // TODO Revoir cette partie
-            if (arrayJoueurs) {
-                arrayJoueurs.forEach((joueur: JoueurRaw) => {
-                    let joueurTmp = new Joueur(
-                        joueur.licence,
-                        joueur.club,
-                        joueur.nclub,
-                        joueur.nom,
-                        joueur.prenom,
-                        null,
-                        null,
-                        joueur.clast,
-                        null,
-                        null
-                    );
-                    delete joueurTmp.points; // Les champs sexe, echelon, place, points ne sont pas fournis pour cette route
-                    delete joueurTmp.echelon;
-                    delete joueurTmp.isHomme;
-                    delete joueurTmp.points;
-                    delete joueurTmp.place;
-                    joueurs.push(joueurTmp);
-                })
-            }
-            return joueurs;
-        })
-    }
-
-    /**
-     * @param string licenceId
-     * @return JoueurDetails
-     * @throws Exception\InvalidURIParametersException
-     * @throws Exception\URIPartNotValidException
-     * @throws JoueurNotFound
-     */
-    public getJoueurDetailsByLicence(licenceId: string): Promise<JoueurClassementDetails>
-    {
-        return this.apiRequest.get('xml_licence_b',
-        {
-            licence: licenceId
-        }).then((result: JoueurClassementDetailsRaw) => {
-            let joueurResult: JoueurClassementDetailsRaw = result;
-    
-            // if (!joueurResult.hasOwnProperty('licence')) throw new JoueurNotFound(licenceId);
-            // else joueurResult = joueurResult.licence;
-    
-            let joueurDetails: JoueurClassementDetails = new JoueurClassementDetails(
-                Number(joueurResult.idlicence),
-                licenceId,
-                joueurResult.nom,
-                joueurResult.prenom,
-                joueurResult.numclub,
-                joueurResult.nomclub,
-                joueurResult.sexe === 'M' ? true : false,
-                joueurResult.cat,
-                Utils.returnNumberOrNull(joueurResult.initm) ?? Number(joueurResult.point),
-                Number(joueurResult.point),
-                Utils.returnNumberOrNull(joueurResult.pointm) ?? Number(joueurResult.point),
-                Utils.returnNumberOrNull(joueurResult.apointm) ?? Number(joueurResult.point),
-                Utils.returnStringOrNull(joueurResult.ja),
-                Utils.returnStringOrNull(joueurResult.arb),
-                Utils.returnStringOrNull(joueurResult.tech),
-                Utils.returnStringOrNull(joueurResult.mutation),
-                joueurResult.natio,
-                Utils.returnStringOrNull(joueurResult.echelon),
-                Utils.returnNumberOrNull(joueurResult.place),
-                Utils.returnStringOrNull(joueurResult.type),
-                joueurResult.certif
-            );
-            return joueurDetails;
-        }).catch(_e /*: NoFFTTResponseException*/ => {
-            throw new JoueurNotFound(licenceId);
-        })
-    }
-
-    /**
-     * @param string licenceId
-     * @return Classement
-     * @throws Exception\InvalidURIParametersException
-     * @throws Exception\URIPartNotValidException
-     * @throws JoueurNotFound
-     */
-    public getClassementJoueurByLicence(licence: string): Promise<Classement>
-    {
-        return this.apiRequest.get('xml_joueur',
-        {
-            licence: licence
-        }).then((result: any) => {
-            let joueurDetails: ClassementRaw = result.joueur;
-    
-            return new Classement(
-                Number(joueurDetails.point),
-                Number(joueurDetails.apoint),
-                joueurDetails.clast,
-                Number(joueurDetails.clnat),
-                Number(joueurDetails.rangreg),
-                Number(joueurDetails.rangdep),
-                Number(joueurDetails.valcla),
-                Number(joueurDetails.valinit),
-                joueurDetails.licence,
-                joueurDetails.nom,
-                joueurDetails.prenom,
-                joueurDetails.club,
-                joueurDetails.nclub,
-                joueurDetails.natio ?? null,
-                Number(joueurDetails.clglob),
-                Number(joueurDetails.aclglob),
-                joueurDetails.categ,
-                joueurDetails.clpro,
-            );
-        }).catch(_e => {
-            throw new JoueurNotFound(licence);
-        })
-    }
-
-     public getDivisionsByEpreuve(type: string, idEpreuve: number, idOrganisme: number): Promise<Division[]>
-     {
-         return this.apiRequest.get('xml_division',
-         {
-            type: type,
-            epreuve: idEpreuve, // 'E' = Equipe, 'I' = Individuelle
-            organisme: idOrganisme
-         }).then((result: any) => {
-             let divisionsData: DivisionRaw[] = Utils.wrappedArrayIfUnique(result.division);
-             let divisions: Division[] = [];
-
-             divisionsData.forEach((division: DivisionRaw) => {
-                divisions.push(new Division(
-                     Number(division.iddivision),
-                     division.libelle
-                 ));
-             })
-             return divisions;
-         })
-     }
-
-    /**
-     * @param string licenceId
-     * @return Historique[]
-     * @throws Exception\InvalidURIParametersException
-     * @throws Exception\URIPartNotValidException
-     * @throws JoueurNotFound
-     */
-    public getHistoriqueJoueurByLicence(licenceId: string): Promise<Historique[]>
-    {
-        return this.apiRequest.get('xml_histo_classement',
-        {
-            numlic: licenceId
-        }).then((result: any) => {
-            let classementsData: HistoriqueRaw[] = Utils.wrappedArrayIfUnique(result.histo);
-            let classements: Historique[] = [];
-    
-            classementsData.forEach((classement: HistoriqueRaw) => {
-                let splited = classement.saison.split(' ');
-                let historique = new Historique(
-                    Number(splited[1]),
-                    Number(splited[3]),
-                    Number(classement.phase),
-                    Number(classement.point),
-                    Utils.returnStringOrNull(classement.echelon),
-                    Utils.returnNumberOrNull(classement.place)
-                );
-                classements.push(historique);
-            })
-            return classements;
-        })
-        // .catch (_e/*: NoFFTTResponseException*/ => {
-        //     throw new JoueurNotFound(licenceId);
-        // })
-    }
-
-    /**
-     * @param string joueurId
-     * @return Partie[]
-     * @throws Exception\InvalidURIParametersException
-     * @throws Exception\URIPartNotValidException
-     */
-    public getPartiesJoueurByLicence(joueurId: string): Promise<Partie[]>
-    {
-        return this.apiRequest.get('xml_partie_mysql',
-        {
-            licence: joueurId,
-        }).then((result: any) => {
-            let partiesData: PartieRaw[] = Utils.wrappedArrayIfUnique(result.partie);
-            let parties: Partie[] = [];
-
-            partiesData.forEach((partie: PartieRaw) => {
-                let nom: string, prenom: string;
-                [nom, prenom] = Utils.returnNomPrenom(partie.advnompre);
-                parties.push(new Partie(
-                    partie.vd === "V" ? true : false,
-                    partie.numjourn ? Number(partie.numjourn) : null,
-                    Utils.createDate(partie.date),
-                    Number(partie.pointres),
+              if (found === 0) {
+                unvalidatedParties.push(
+                  new UnvalidatedPartie(
+                    partie.epreuve,
+                    partie.idpartie,
                     Number(partie.coefchamp),
-                    partie.advlic,
-                    partie.advsexe === 'M' ? true : false,
+                    partie.victoire === "V",
+                    false,
+                    Utils.createDate(partie.date),
                     nom,
                     prenom,
-                    Number(partie.advclaof),
-                    partie.licence,
-                    Number(partie.idpartie),
-                    partie.codechamp
-                ));
-            })
-    
-            return parties;
-        }).catch(e/*: NoFFTTResponseException)*/ => {
-            return [];
-        })
-    }
-
-    /**
-     * Détermine si la date d'un match est hors de la plage des dates définissant les matches comme validés/comptabilisés
-     */
-    public isNouveauMoisVirtuel(date: Date): boolean {
-        try {
-            let mois: number = date.getMonth() + 1;
-            let annee: number = date.getFullYear();
-
-            while (!this.DATES_PUBLICATION.hasOwnProperty(mois)) {
-                if (mois == 12) {
-                    mois = 1;
-                    annee++;
-                } else mois++;
+                    Utils.formatPoints(partie.classement)
+                  )
+                );
+              }
             }
-            return date.getTime() >= (new Date(`${annee}/${mois}/${this.DATES_PUBLICATION[mois]}`)).getTime();
+          });
+          return unvalidatedParties;
         } catch (e) {
-            return false;
+          return [];
         }
-    }
+      })
+      .catch((e) /*: NoFFTTResponseException*/ => {
+        return [];
+      });
+  }
 
-    /**
-     * @param string joueurId
-     * @return UnvalidatedPartie[]
-     * @throws InvalidURIParametersException
-     * @throws URIPartNotValidException
-     */
-    public async getUnvalidatedPartiesJoueurByLicence(joueurId: string): Promise<UnvalidatedPartie[]>
-    {
-        return this.apiRequest.get('xml_partie',
-        {
-            numlic: joueurId
-        }).then(async (result: any) => {
-            let validatedParties: Partie[] = await this.getPartiesJoueurByLicence(joueurId);
-            let allParties: any;
-            try {
-                allParties = result.partie ? result.partie : [];
-            } catch (e/*: NoFFTTResponseException*/) {
-                allParties = [];
-            }
-    
-            let unvalidatedParties: UnvalidatedPartie[] = [];
-            try {
-                allParties.forEach((partie: UnvalidatedPartieRaw) => {
-                    if (partie.forfait === "0") {
-                        let nom: string, prenom: string;
-                        [nom, prenom] = Utils.returnNomPrenom(partie.nom);
-    
-                        let found = validatedParties.filter((validatedPartie: Partie) => {
-                            let datePartie = Utils.createDate(partie.date);
-                            
-                            return partie.date === Utils.createStringDateToFormat(validatedPartie.date)
-                                /** Si le nom du joueur correspond bien */
-                                && Utils.removeAccentLowerCaseRegex(nom) === Utils.removeAccentLowerCaseRegex(validatedPartie.adversaireNom)
-                                /** Si le prénom du joueur correspond bien */
-                                && (
-                                    Utils.removeAccentLowerCaseRegex(validatedPartie.adversairePrenom).match(new RegExp(Utils.removeAccentLowerCaseRegex(prenom) + '.*')) ||
-                                    Utils.removeAccentLowerCaseRegex(prenom).includes(Utils.removeAccentLowerCaseRegex(validatedPartie.adversairePrenom))
-                                )
-                                /** Si le coefficient est renseigné */
-                                && validatedPartie.coefficient === Number(partie.coefchamp)
-                                /** Si le joueur n'est pas absent */
-                                && !prenom.includes('Absent') && !nom.includes('Absent')
-                                /** Si la partie a été réalisée durant le mois dernier ou durant le mois actuel */
-                                && !(
-                                    validatedPartie.pointsObtenus === 0.0
-                                    && (
-                                        (datePartie.getMonth() + 1 === (new Date()).getMonth() + 1
-                                            && datePartie.getFullYear() === (new Date()).getFullYear())
-                                        || (`${datePartie.getMonth() + 1}/${datePartie.getFullYear()}`) === `${Utils.getPreviousMonthsMonth()}/${Utils.getPreviousMonthsYear()}`
-                                    )
-                                );
-                        }).length;
-    
-                        if (found === 0) {
-                            unvalidatedParties.push(new UnvalidatedPartie(
-                                partie.epreuve,
-                                partie.idpartie,
-                                Number(partie.coefchamp),
-                                partie.victoire === "V",
-                                false,
-                                Utils.createDate(partie.date),
-                                nom,
-                                prenom,
-                                Utils.formatPoints(partie.classement)
-                            ));
-                        }
-                    }
-                })
-                return unvalidatedParties;
-            } catch (e) {
-                return [];
-            }
-        }).catch(e/*: NoFFTTResponseException*/ => {
-            return [];
-        })
-    }
+  /**
+   * @param string joueurId
+   * @return VirtualPoints Objet contenant les points gagnés/perdus et le classement virtuel du joueur
+   */
+  public async getJoueurVirtualPoints(joueurId: string): Promise<VirtualPoints> {
+    try {
+      let classement = await this.getClassementJoueurByLicence(joueurId);
+      let virtualMonthlyPointsWon = 0.0;
+      let virtualMonthlyPoints = 0.0;
+      let latestMonth: number | null = null;
+      let monthPoints = Utils.round(classement.points);
+      let unvalidatedParties = await this.getUnvalidatedPartiesJoueurByLicence(joueurId);
 
-    /**
-     * @param string joueurId
-     * @return VirtualPoints Objet contenant les points gagnés/perdus et le classement virtuel du joueur
-     */
-    public async getJoueurVirtualPoints(joueurId: string): Promise<VirtualPoints>
-    {
-        try {
-            let classement = await this.getClassementJoueurByLicence(joueurId);
-            let virtualMonthlyPointsWon = 0.0;
-            let virtualMonthlyPoints = 0.0;
-            let latestMonth: number | null = null;
-            let monthPoints = Utils.round(classement.points);
-            let unvalidatedParties = await this.getUnvalidatedPartiesJoueurByLicence(joueurId);
+      // usort(unvalidatedParties, (UnvalidatedPartie a, UnvalidatedPartie b) {
+      //     return a.getDate() >= b.getDate();
+      // });
 
-            // usort(unvalidatedParties, (UnvalidatedPartie a, UnvalidatedPartie b) {
-            //     return a.getDate() >= b.getDate();
-            // });
+      unvalidatedParties.forEach(async (unvalidatedParty: UnvalidatedPartie) => {
+        if (!latestMonth) {
+          latestMonth = unvalidatedParty.date.getMonth() + 1;
+        } else {
+          if (
+            latestMonth != unvalidatedParty.date.getMonth() + 1 &&
+            this.isNouveauMoisVirtuel(unvalidatedParty.date)
+          ) {
+            monthPoints = Utils.round(classement.points + virtualMonthlyPointsWon);
+            latestMonth = unvalidatedParty.date.getMonth() + 1;
+          }
+        }
 
-            unvalidatedParties.forEach(async (unvalidatedParty: UnvalidatedPartie) => {
-                if (!latestMonth) {
-                    latestMonth = unvalidatedParty.date.getMonth() + 1;
-                } else {
-                    if (latestMonth != (unvalidatedParty.date.getMonth() + 1) && this.isNouveauMoisVirtuel(unvalidatedParty.date)) {
-                        monthPoints = Utils.round(classement.points + virtualMonthlyPointsWon);
-                        latestMonth = unvalidatedParty.date.getMonth() + 1;
-                    }
-                }
+        let coeff: number = unvalidatedParty.coefficientChampionnat;
 
-                let coeff: number = unvalidatedParty.coefficientChampionnat;
+        if (!unvalidatedParty.isForfait) {
+          let adversairePoints: number = unvalidatedParty.adversaireClassement;
 
-                if (!unvalidatedParty.isForfait) {
-                    let adversairePoints: number = unvalidatedParty.adversaireClassement;
-
-                    try {
-                        let availableJoueurs: Joueur[] = await this.getJoueursByNom(unvalidatedParty.adversaireNom, unvalidatedParty.adversairePrenom);
-                        
-                        for (const availableJoueur of availableJoueurs) {
-                            if (Utils.round((unvalidatedParty.adversaireClassement / 100)) == availableJoueur.points) {
-                                let classementJoueur: Classement = await this.getClassementJoueurByLicence(availableJoueur.licence);
-                                adversairePoints = Utils.round(classementJoueur.points);
-                                break;
-                            }
-                        }
-                    } catch (e) {
-                        if (e instanceof NoFFTTResponseException || e instanceof InvalidURIParametersException) {
-                            adversairePoints = unvalidatedParty.adversaireClassement;
-                         }
-                    }
-
-                    let points: number = unvalidatedParty.isVictoire
-                        ? PointCalculator.getPointVictory(monthPoints, Number(adversairePoints))
-                        : PointCalculator.getPointDefeat(monthPoints, Number(adversairePoints));
-                    virtualMonthlyPointsWon += points * coeff;
-                }
-            })
-
-            virtualMonthlyPoints = monthPoints + virtualMonthlyPointsWon;
-            return new VirtualPoints(
-                virtualMonthlyPointsWon,
-                virtualMonthlyPoints,
-                virtualMonthlyPoints - classement.pointsInitials
+          try {
+            let availableJoueurs: Joueur[] = await this.getJoueursByNom(
+              unvalidatedParty.adversaireNom,
+              unvalidatedParty.adversairePrenom
             );
-        } catch (/*JoueurNotFound*/ e) {
-            return new VirtualPoints(0.0, (await this.getJoueurDetailsByLicence(joueurId)).pointsLicence, 0.0);
-        }
-    }
 
-    /**
-     * @param string joueurId
-     * @return number Points mensuels gagnés/perdus
-     */
-    public getVirtualPoints(joueurId: string): Promise<number> {
-        return this.getJoueurVirtualPoints(joueurId).then((pointsVirtuels: VirtualPoints) => {
-            return pointsVirtuels.monthlyPointsWon;
-        });
-    }
-
-    /**
-     * @param string clubId
-     * @param string|null type
-     * @return Equipe[]
-     * @throws Exception\InvalidURIParametersException
-     * @throws Exception\URIPartNotValidException
-     * @throws NoFFTTResponseException
-     */
-    public getEquipesByClub(clubId: string, type: string | null = null): Promise<Equipe[]>
-    {
-        let params: ParamsEquipe = {
-            numclu: clubId
-        };
-
-        if (type) params.type = type;
-
-        return this.apiRequest.get('xml_equipe', params).then((result: any) => {
-            let equipesData: EquipeRaw[] = Utils.wrappedArrayIfUnique(result.equipe);
-            let equipes: Equipe[] = [];
-
-            equipesData.forEach((dataEquipe: EquipeRaw) => {
-                equipes.push(new Equipe(
-                    dataEquipe.libequipe,
-                    dataEquipe.libdivision,
-                    dataEquipe.liendivision,
-                    Number(dataEquipe.idequipe),
-                    Number(dataEquipe.idepr),
-                    dataEquipe.libepr,
-                ));
-            })
-            return equipes;
-        })
-    }
-
-    /**
-     * @param string lienDivision
-     * @return EquipePoule[]
-     * @throws Exception\InvalidURIParametersException
-     * @throws Exception\URIPartNotValidException
-     * @throws NoFFTTResponseException
-     */
-
-    // TODO Faire pour différentes 'action' possibles
-    public getClassementPouleByLienDivision(d1: number, action: string | null, cx_poule?: number | null, lienDivision?: string | null)
-    : Promise<ClassementResultEquipe[] | PouleResultEquipe | Rencontre[]>
-    {
-        let params: ParamsPoule = {
-            D1: d1
-        }
-        if (action) params.action = action;
-        if (cx_poule) params.cx_poule = cx_poule;
-
-        return this.apiRequest.get('xml_result_equ', params, lienDivision)
-            .then((result: any) => {
-                switch(action) { 
-                    case 'classement': {
-                        let resultData: ClassementResultEquipeRaw[] = result.classement;
-
-                        let classement: ClassementResultEquipe[] = [];
-                        let lastClassment: number = 0;
-    
-                        resultData.forEach((equipePouleData: ClassementResultEquipeRaw) => {
-            
-                            // if (typeof equipePouleData.equipe !== 'string' || !equipePouleData.equipe) break;
-                        
-                            let equipeTmp: ClassementResultEquipe = new ClassementResultEquipe(
-                                equipePouleData.clt === '-' ? lastClassment : Number(equipePouleData.clt),
-                                equipePouleData.equipe,
-                                Number(equipePouleData.joue),
-                                Number(equipePouleData.pts),
-                                equipePouleData.numero,
-                                Number(equipePouleData.totvic),
-                                Number(equipePouleData.totdef),
-                                Number(equipePouleData.idequipe),
-                                equipePouleData.idclub,
-                                Number(equipePouleData.poule),
-                                Number(equipePouleData.vic),
-                                Number(equipePouleData.def),
-                                Number(equipePouleData.nul),
-                                Number(equipePouleData.pf),
-                                Number(equipePouleData.pg),
-                                Number(equipePouleData.pp)
-                            )
-    
-                            classement.push(equipeTmp);
-                            lastClassment = equipePouleData.clt === '-' ? lastClassment : Number(equipePouleData.clt);
-                        })
-                        return classement;
-                    }
-                    case 'poule': {
-                        let resultData: PouleResultEquipeRaw = result.poule;
-                        return new PouleResultEquipe(
-                            resultData.libelle,
-                            resultData.lien
-                        );
-                    }
-                    case null: {
-                        let resultData: TourResultEquipeRaw[] = result.tour;
-
-                        let tours: Rencontre[] = [];
-    
-                        resultData.forEach((tourData: TourResultEquipeRaw) => {
-                            tours.push(new Rencontre(
-                                tourData.libelle,
-                                tourData.equa,
-                                tourData.equb,
-                                Utils.returnNumberOrNull(tourData.scorea),
-                                Utils.returnNumberOrNull(tourData.scoreb),
-                                tourData.lien,
-                                Utils.createDate(tourData.dateprevue),
-                                Utils.returnDateOrNull(tourData.datereelle)
-                            ));
-                        })
-                        return tours;
-                    }
-                    default: {
-                        return [];
-                    }
-                 } 
-            })
-    }
-
-    /**
-     * @param string lienDivision
-     * @return Rencontre[]
-     * @throws Exception\InvalidURIParametersException
-     * @throws Exception\URIPartNotValidException
-     * @throws NoFFTTResponseException
-     */
-    public getRencontrePouleByLienDivision(lienDivision: string): Promise<Rencontre[]>
-    {
-        return this.apiRequest.get('xml_result_equ', {}, lienDivision).then((result: any) => {
-            let rencontresData = result.tour;
-            let rencontres: Rencontre[] = [];
-
-            rencontresData.forEach((dataRencontre: RencontreRaw) => {
-                let equipeA = dataRencontre.equa;
-                let equipeB = dataRencontre.equb;
-    
-                rencontres.push(new Rencontre(
-                    dataRencontre.libelle,
-                    equipeA,
-                    equipeB,
-                    Utils.returnNumberOrNull(dataRencontre.scorea),
-                    Utils.returnNumberOrNull(dataRencontre.scoreb),
-                    dataRencontre.lien,
-                    Utils.createDate(dataRencontre.dateprevue),
-                    Utils.returnDateOrNull(dataRencontre.datereelle)
-                ));
-            })
-            return rencontres;
-        })
-    }
-
-
-    /**
-     * @param Equipe equipe
-     * @return Rencontre[]
-     * @throws Exception\InvalidURIParametersException
-     * @throws Exception\URIPartNotValidException
-     * @throws NoFFTTResponseException
-     */
-    public getProchainesRencontresEquipe(equipe: Equipe): Promise<Rencontre[]>
-    {
-        return this.getRencontrePouleByLienDivision(equipe.lienDivision).then((result: Rencontre[]) => {
-            let nomEquipe: string = Utils.extractNomEquipe(equipe);
-            let rencontres: Rencontre[] = result;
-            let prochainesRencontres: Rencontre[] = [];
-            rencontres.forEach((rencontre: Rencontre) => {
-                if (!rencontre.dateReelle && rencontre.nomEquipeA === nomEquipe || rencontre.nomEquipeB === nomEquipe) {
-                    prochainesRencontres.push(rencontre);
-                }
-            })
-            return prochainesRencontres;
-        });
-    }
-
-    /**
-     * @param string lienRencontre
-     * @param string clubEquipeA
-     * @param string clubEquipeB
-     * @return RencontreDetails
-     * @throws Exception\InvalidURIParametersException
-     * @throws Exception\URIPartNotValidException
-     * @throws InvalidLienRencontre
-     * @throws NoFFTTResponseException
-     */
-    public getDetailsRencontreByLien(lienRencontre: string, idClubEquipeA: string, idClubEquipeB: string): Promise<RencontreDetails>
-    {
-        return this.apiRequest.get('xml_chp_renc', {}, lienRencontre).then((result: any) => {
-            let factory = new RencontreDetailsFactory(this);
-            let detailsRencontreData: RencontreDetailsRaw = result;
-        
-            if (!(Utils.isset(detailsRencontreData.resultat) && Utils.isset(detailsRencontreData.joueur) && Utils.isset(detailsRencontreData.partie))) {
-                throw new InvalidLienRencontre(lienRencontre);
+            for (const availableJoueur of availableJoueurs) {
+              if (
+                Utils.round(unvalidatedParty.adversaireClassement / 100) == availableJoueur.points
+              ) {
+                let classementJoueur: Classement = await this.getClassementJoueurByLicence(
+                  availableJoueur.licence
+                );
+                adversairePoints = Utils.round(classementJoueur.points);
+                break;
+              }
             }
-            
-            return factory.createFromArray(detailsRencontreData, idClubEquipeA, idClubEquipeB);
-        })
+          } catch (e) {
+            if (
+              e instanceof NoFFTTResponseException ||
+              e instanceof InvalidURIParametersException
+            ) {
+              adversairePoints = unvalidatedParty.adversaireClassement;
+            }
+          }
+
+          let points: number = unvalidatedParty.isVictoire
+            ? PointCalculator.getPointVictory(monthPoints, Number(adversairePoints))
+            : PointCalculator.getPointDefeat(monthPoints, Number(adversairePoints));
+          virtualMonthlyPointsWon += points * coeff;
+        }
+      });
+
+      virtualMonthlyPoints = monthPoints + virtualMonthlyPointsWon;
+      return new VirtualPoints(
+        virtualMonthlyPointsWon,
+        virtualMonthlyPoints,
+        virtualMonthlyPoints - classement.pointsInitials
+      );
+    } catch (/*JoueurNotFound*/ e) {
+      return new VirtualPoints(
+        0.0,
+        (await this.getJoueurDetailsByLicence(joueurId)).pointsLicence,
+        0.0
+      );
+    }
+  }
+
+  /**
+   * @param string joueurId
+   * @return number Points mensuels gagnés/perdus
+   */
+  public getVirtualPoints(joueurId: string): Promise<number> {
+    return this.getJoueurVirtualPoints(joueurId).then((pointsVirtuels: VirtualPoints) => {
+      return pointsVirtuels.monthlyPointsWon;
+    });
+  }
+
+  /**
+   * @param string clubId
+   * @param string|null type
+   * @return Equipe[]
+   * @throws Exception\InvalidURIParametersException
+   * @throws Exception\URIPartNotValidException
+   * @throws NoFFTTResponseException
+   */
+  public getEquipesByClub(clubId: string, type: string | null = null): Promise<Equipe[]> {
+    let params: ParamsEquipe = {
+      numclu: clubId,
+    };
+
+    if (type) params.type = type;
+
+    return this.apiRequest.get("xml_equipe", params).then((result: any) => {
+      let equipesData: EquipeRaw[] = Utils.wrappedArrayIfUnique(result.equipe);
+      let equipes: Equipe[] = [];
+
+      equipesData.forEach((dataEquipe: EquipeRaw) => {
+        equipes.push(
+          new Equipe(
+            dataEquipe.libequipe,
+            dataEquipe.libdivision,
+            dataEquipe.liendivision,
+            Number(dataEquipe.idequipe),
+            Number(dataEquipe.idepr),
+            dataEquipe.libepr
+          )
+        );
+      });
+      return equipes;
+    });
+  }
+
+  /**
+   * @param string lienDivision
+   * @return EquipePoule[]
+   * @throws Exception\InvalidURIParametersException
+   * @throws Exception\URIPartNotValidException
+   * @throws NoFFTTResponseException
+   */
+
+  // TODO Faire pour différentes 'action' possibles
+  public getClassementPouleByLienDivision(
+    d1: number,
+    action: string | null,
+    cx_poule?: number | null,
+    lienDivision?: string | null
+  ): Promise<ClassementResultEquipe[] | PouleResultEquipe | Rencontre[]> {
+    let params: ParamsPoule = {
+      D1: d1,
+    };
+    if (action) params.action = action;
+    if (cx_poule) params.cx_poule = cx_poule;
+
+    return this.apiRequest.get("xml_result_equ", params, lienDivision).then((result: any) => {
+      switch (action) {
+        case "classement": {
+          let resultData: ClassementResultEquipeRaw[] = result.classement;
+
+          let classement: ClassementResultEquipe[] = [];
+          let lastClassment: number = 0;
+
+          resultData.forEach((equipePouleData: ClassementResultEquipeRaw) => {
+            // if (typeof equipePouleData.equipe !== 'string' || !equipePouleData.equipe) break;
+
+            let equipeTmp: ClassementResultEquipe = new ClassementResultEquipe(
+              equipePouleData.clt === "-" ? lastClassment : Number(equipePouleData.clt),
+              equipePouleData.equipe,
+              Number(equipePouleData.joue),
+              Number(equipePouleData.pts),
+              equipePouleData.numero,
+              Number(equipePouleData.totvic),
+              Number(equipePouleData.totdef),
+              Number(equipePouleData.idequipe),
+              equipePouleData.idclub,
+              Number(equipePouleData.poule),
+              Number(equipePouleData.vic),
+              Number(equipePouleData.def),
+              Number(equipePouleData.nul),
+              Number(equipePouleData.pf),
+              Number(equipePouleData.pg),
+              Number(equipePouleData.pp)
+            );
+
+            classement.push(equipeTmp);
+            lastClassment =
+              equipePouleData.clt === "-" ? lastClassment : Number(equipePouleData.clt);
+          });
+          return classement;
+        }
+        case "poule": {
+          let resultData: PouleResultEquipeRaw = result.poule;
+          return new PouleResultEquipe(resultData.libelle, resultData.lien);
+        }
+        case null: {
+          let resultData: TourResultEquipeRaw[] = result.tour;
+
+          let tours: Rencontre[] = [];
+
+          resultData.forEach((tourData: TourResultEquipeRaw) => {
+            tours.push(
+              new Rencontre(
+                tourData.libelle,
+                tourData.equa,
+                tourData.equb,
+                Utils.returnNumberOrNull(tourData.scorea),
+                Utils.returnNumberOrNull(tourData.scoreb),
+                tourData.lien,
+                Utils.createDate(tourData.dateprevue),
+                Utils.returnDateOrNull(tourData.datereelle)
+              )
+            );
+          });
+          return tours;
+        }
+        default: {
+          return [];
+        }
+      }
+    });
+  }
+
+  /**
+   * @param string lienDivision
+   * @return Rencontre[]
+   * @throws Exception\InvalidURIParametersException
+   * @throws Exception\URIPartNotValidException
+   * @throws NoFFTTResponseException
+   */
+  public getRencontrePouleByLienDivision(lienDivision: string): Promise<Rencontre[]> {
+    return this.apiRequest.get("xml_result_equ", {}, lienDivision).then((result: any) => {
+      let rencontresData = result.tour;
+      let rencontres: Rencontre[] = [];
+
+      rencontresData.forEach((dataRencontre: RencontreRaw) => {
+        let equipeA = dataRencontre.equa;
+        let equipeB = dataRencontre.equb;
+
+        rencontres.push(
+          new Rencontre(
+            dataRencontre.libelle,
+            equipeA,
+            equipeB,
+            Utils.returnNumberOrNull(dataRencontre.scorea),
+            Utils.returnNumberOrNull(dataRencontre.scoreb),
+            dataRencontre.lien,
+            Utils.createDate(dataRencontre.dateprevue),
+            Utils.returnDateOrNull(dataRencontre.datereelle)
+          )
+        );
+      });
+      return rencontres;
+    });
+  }
+
+  /**
+   * @param Equipe equipe
+   * @return Rencontre[]
+   * @throws Exception\InvalidURIParametersException
+   * @throws Exception\URIPartNotValidException
+   * @throws NoFFTTResponseException
+   */
+  public getProchainesRencontresEquipe(equipe: Equipe): Promise<Rencontre[]> {
+    return this.getRencontrePouleByLienDivision(equipe.lienDivision).then((result: Rencontre[]) => {
+      let nomEquipe: string = Utils.extractNomEquipe(equipe);
+      let rencontres: Rencontre[] = result;
+      let prochainesRencontres: Rencontre[] = [];
+      rencontres.forEach((rencontre: Rencontre) => {
+        if (
+          !rencontre.dateReelle &&
+          (rencontre.nomEquipeA === nomEquipe || rencontre.nomEquipeB === nomEquipe)
+        ) {
+          prochainesRencontres.push(rencontre);
+        }
+      });
+      return prochainesRencontres;
+    });
+  }
+
+  /**
+   * @param string lienRencontre
+   * @param string clubEquipeA
+   * @param string clubEquipeB
+   * @return RencontreDetails
+   * @throws Exception\InvalidURIParametersException
+   * @throws Exception\URIPartNotValidException
+   * @throws InvalidLienRencontre
+   * @throws NoFFTTResponseException
+   */
+  public getDetailsRencontreByLien(
+    lienRencontre: string,
+    idClubEquipeA: string,
+    idClubEquipeB: string
+  ): Promise<RencontreDetails> {
+    return this.apiRequest.get("xml_chp_renc", {}, lienRencontre).then((result: any) => {
+      let factory = new RencontreDetailsFactory(this);
+      let detailsRencontreData: RencontreDetailsRaw = result;
+
+      if (
+        !(
+          Utils.isset(detailsRencontreData.resultat) &&
+          Utils.isset(detailsRencontreData.joueur) &&
+          Utils.isset(detailsRencontreData.partie)
+        )
+      ) {
+        throw new InvalidLienRencontre(lienRencontre);
+      }
+
+      return factory.createFromArray(detailsRencontreData, idClubEquipeA, idClubEquipeB);
+    });
+  }
+
+  /**
+   * @return Actualite[]
+   * @throws Exception\InvalidURIParametersException
+   * @throws Exception\URIPartNotValidException
+   * @throws NoFFTTResponseException
+   */
+  public getActualites(): Promise<Actualite[]> {
+    return this.apiRequest.get("xml_new_actu").then((data: any) => {
+      let actualites: any = Utils.wrappedArrayIfUnique(data.news);
+      let result: Actualite[] = [];
+
+      actualites.forEach((dataActualite: ActualiteRaw) => {
+        result.push(
+          new Actualite(
+            dataActualite.date,
+            dataActualite.titre,
+            dataActualite.description,
+            dataActualite.url,
+            dataActualite.photo,
+            dataActualite.categorie
+          )
+        );
+      });
+      return result;
+    });
+  }
+
+  /**
+   * Récupère la liste des épreuves pour un organisme
+   * Endpoint: xml_epreuve.php
+   * @param organismeId - ID unique de l'organisme
+   * @param type - Type d'épreuve (E = Equipes, I = Individuelles)
+   * @returns Promise<Epreuve[]> - Liste des épreuves
+   */
+  public getEpreuves(organismeId: number, type: "E" | "I"): Promise<Epreuve[]> {
+    return this.apiRequest
+      .get("xml_epreuve", {
+        organisme: organismeId,
+        type: type,
+      })
+      .then((result: any) => {
+        let dataEpreuves: any[] = Utils.wrappedArrayIfUnique(result.epreuve);
+        return dataEpreuves.map((epreuve: any) => ({
+          id: epreuve.idepreuve,
+          organismeId: epreuve.idorga,
+          libelle: epreuve.libelle,
+        }));
+      });
+  }
+
+  /**
+   * Récupère les résultats d'une épreuve individuelle
+   * Endpoint: xml_result_indiv.php
+   * @param epreuveId - ID de l'épreuve
+   * @param divisionId - ID de la division
+   * @param action - Action demandée ('poule', 'classement', 'partie')
+   * @param groupeId - ID du groupe (optionnel)
+   * @returns Promise<ResultatIndividuel[] | ClassementIndividuel[] | PartieIndividuelle[]> - Résultats selon l'action
+   */
+  public getResultatsIndividuels(
+    epreuveId: number,
+    divisionId: number,
+    action: "poule" | "classement" | "partie",
+    groupeId?: number
+  ): Promise<ResultatIndividuel[] | ClassementIndividuel[] | PartieIndividuelle[]> {
+    const params: any = {
+      epr: epreuveId,
+      res_division: divisionId,
+      action: action,
+    };
+
+    if (groupeId) {
+      params.cx_tableau = groupeId;
     }
 
-    /**
-     * @return Actualite[]
-     * @throws Exception\InvalidURIParametersException
-     * @throws Exception\URIPartNotValidException
-     * @throws NoFFTTResponseException
-     */
-    public getActualites(): Promise<Actualite[]>
-    {
-        return this.apiRequest.get('xml_new_actu').then((data: any) => {
-            let actualites: any = Utils.wrappedArrayIfUnique(data.news);
-            let result: Actualite[] = [];
+    return this.apiRequest.get("xml_result_indiv", params).then((result: any) => {
+      // Traitement selon l'action demandée
+      switch (action) {
+        case "poule":
+          return Utils.wrappedArrayIfUnique(result.tour);
+        case "classement":
+          return Utils.wrappedArrayIfUnique(result.classement);
+        case "partie":
+          return Utils.wrappedArrayIfUnique(result.partie);
+        default:
+          return result;
+      }
+    });
+  }
 
-            actualites.forEach((dataActualite: ActualiteRaw) => {
-                result.push(new Actualite(
-                    dataActualite.date,
-                    dataActualite.titre,
-                    dataActualite.description,
-                    dataActualite.url,
-                    dataActualite.photo,
-                    dataActualite.categorie
-                ));
-            })
-            return result;
-        })
+  /**
+   * Récupère le classement général d'une division du critérium
+   * Endpoint: xml_res_cla.php
+   * @param divisionId - ID de la division (optionnel, sinon récupéré automatiquement)
+   * @returns Promise<ClassementCriterium[]> - Classement de la division
+   */
+  public async getClassementCriterium(divisionId?: number): Promise<ClassementCriterium[]> {
+    let actualDivisionId = divisionId;
+
+    // Si pas de divisionId fourni, récupérer la première division disponible
+    if (!actualDivisionId) {
+      try {
+        const divisions = await this.getDivisionsByEpreuve("E", 15954, 1); // Épreuve 15954 (FED_Championnat de France par Equipes Masculin) - organisme 1 (FFTT nationale)
+        if (divisions && divisions.length > 0) {
+          // Chercher spécifiquement la division Nationale 2 P1 (Phase 1)
+          const nationale2P1 = divisions.find(
+            div =>
+              div.libelle && div.libelle.includes("Nationale 2") && div.libelle.includes("Phase 1")
+          );
+
+          if (nationale2P1) {
+            actualDivisionId = parseInt(nationale2P1.idDivision.toString());
+            console.log(
+              `🔍 Division Nationale 2 P1 trouvée: ${actualDivisionId} (${nationale2P1.libelle})`
+            );
+          } else {
+            // Fallback sur la première division si Nationale 2 P2 n'est pas trouvée
+            actualDivisionId = parseInt(divisions[0].idDivision.toString());
+            console.log(`🔍 Division automatiquement récupérée (fallback): ${actualDivisionId}`);
+          }
+        } else {
+          throw new Error("Aucune division trouvée pour récupérer le classement");
+        }
+      } catch (error) {
+        console.error("❌ Erreur lors de la récupération automatique de la division:", error);
+        throw error;
+      }
     }
+
+    return this.apiRequest
+      .get("xml_res_cla", {
+        res_division: actualDivisionId,
+        // Paramètres simplifiés avec la vraie division
+        saison: new Date().getFullYear().toString(),
+        type: "E", // Type d'épreuve (E = Equipes)
+        organisme: "1", // ID de l'organisme (FFTT nationale)
+        epreuve: "15954", // ID de l'épreuve (FED_Championnat de France par Equipes Masculin)
+      })
+      .then((result: any) => {
+        let classements: any[] = Utils.wrappedArrayIfUnique(result.classement);
+        return classements.map((classement: any) => ({
+          rang: classement.rang,
+          nom: classement.nom,
+          classement: classement.clt,
+          club: classement.club,
+          points: classement.points,
+        }));
+      });
+  }
 }

@@ -6,18 +6,24 @@ import { HistoriqueRaw } from "./Raw/HistoriqueRaw.interface";
 import { OrganismeRaw } from "./Raw/OrganismeRaw.interface";
 import { PartieRaw } from "./Raw/PartieRaw.interface";
 import { PouleResultEquipeRaw } from "./Raw/PouleResultEquipeRaw.interface";
+import { ClubRaw } from "./Raw/ClubRaw.interface";
+import { ClubDetailsRaw } from "./Raw/ClubDetailsRaw.interface";
+import { JoueurRaw } from "./Raw/JoueurRaw.interface";
+import { ClassementRaw } from "./Raw/ClassementRaw.interface";
+import { RencontreRaw } from "./Raw/RencontreRaw.interface";
+import { TourResultEquipeRaw } from "./Raw/TourResultEquipeRaw.interface";
 
 export interface ResponseData {
-    organisme?: OrganismeRaw[],
-    club?: any, // Club[] | ClubDetailsRaw
-    joueur?: any, // JoueurRaw[] | ClassementRaw
-    histo?: HistoriqueRaw[],
-    partie?: PartieRaw[],
-    equipe?: EquipeRaw[],
-    classement?: ClassementResultEquipeRaw[],
-    tour?: any, //RencontreRaw[] | TourResultEquipeRaw[],
-    news?: Actualite[],
-    division?: DivisionRaw[],
-    resultat?: any // TODO Creer une interface
-    poule?: PouleResultEquipeRaw
+  organisme?: OrganismeRaw[];
+  club?: ClubRaw[] | ClubDetailsRaw;
+  joueur?: JoueurRaw[] | ClassementRaw;
+  histo?: HistoriqueRaw[];
+  partie?: PartieRaw[];
+  equipe?: EquipeRaw[];
+  classement?: ClassementResultEquipeRaw[];
+  tour?: RencontreRaw[] | TourResultEquipeRaw[];
+  news?: Actualite[];
+  division?: DivisionRaw[];
+  resultat?: unknown; // TODO: Créer une interface spécifique
+  poule?: PouleResultEquipeRaw;
 }

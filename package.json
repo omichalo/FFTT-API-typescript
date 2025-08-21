@@ -1,12 +1,22 @@
 {
-  "name": "ffttapi-node",
-  "version": "1.0.0",
+  "name": "@omichalo/ffttapi-node",
+  "version": "0.0.8",
   "description": "\"# ffttAPI\"",
-  "main": "source/server.ts",
+  "main": "build/FFTTAPI.js",
   "scripts": {
     "start": "nodemon source/server.ts",
-    "build": "rm -rf build/ && prettier --write source/ && tsc",
-    "test": "rmdir /s /q coverage && npx jest --coverage --watchAll"
+    "build": "rm -rf build/ && tsc",
+    "test": "rm -rf coverage && npx jest --coverage",
+    "test:watch": "npx jest --coverage --watchAll",
+    "test:ci": "npx jest --coverage --ci",
+    "test:working": "rm -rf coverage && npx jest --coverage --config jest.config.test.js",
+    "test:integration": "npx jest --config jest.integration.config.js",
+    "test:integration:real": "FFTT_INTEGRATION_ENABLED=true npx jest --config jest.integration.config.js",
+    "test:integration:watch": "npx jest --config jest.integration.config.js --watch",
+    "lint": "eslint source/**/*.ts --ext .ts",
+    "lint:fix": "eslint source/**/*.ts --ext .ts --fix",
+    "format": "prettier --write source/**/*.ts",
+    "check": "npm run lint && npm run build && npm test"
   },
   "repository": {
     "type": "git",
@@ -17,6 +27,9 @@
   "license": "ISC",
   "bugs": {
     "url": "https://github.com/StephSako/ffttAPI/issues"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "homepage": "https://github.com/StephSako/ffttAPI#readme",
   "dependencies": {
@@ -29,6 +42,7 @@
     "express": "^4.18.1",
     "html-entities": "^2.3.3",
     "http-build-query": "^0.7.0",
+    "iconv-lite": "^0.6.3",
     "moment": "^2.29.4",
     "morgan": "^1.10.0",
     "remove-accents": "^0.4.2",

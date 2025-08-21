@@ -1,6 +1,6 @@
 {
   "name": "@omichalo/ffttapi-node",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "description": "🏓 API Node.js/TypeScript pour la FFTT (Fédération Française de Tennis de Table) - Consommateur de l'API officielle Smartping 2.0",
   "main": "build/FFTTAPI.js",
   "types": "build/FFTTAPI.d.ts",

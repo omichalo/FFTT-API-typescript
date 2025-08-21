@@ -222,7 +222,6 @@ export interface PartieResponse {
     pointres?: string;
     coefchamp?: string;
     advclaof?: string;
-    date?: string;
     nom?: string;
     classement?: string;
     epreuve?: string;
